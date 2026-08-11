@@ -1,6 +1,6 @@
 # Antigravity Model Quota Indicator Extension ⚡
 
-A cross-platform VS Code / Antigravity IDE extension created by **deco_beto** that displays AI model quota usage (**Gemini Models** and **Claude / GPT Models**), remaining percentages, and reset countdowns directly in the status bar.
+A cross-platform VS Code / Antigravity IDE extension created by **decobeto** that displays AI model quota usage (**Gemini Models** and **Claude / GPT Models**), remaining percentages, and reset countdowns directly in the status bar.
 
 ---
 

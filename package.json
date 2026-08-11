@@ -2,17 +2,18 @@
   "name": "antigravity-quota-status",
   "displayName": "Antigravity Model Quota Indicator",
   "description": "Displays model quota usage, remaining percentage, and reset countdowns in the Antigravity IDE status bar for Windows, Linux, and macOS.",
-  "version": "1.0.1",
-  "publisher": "deco_beto",
+  "version": "1.0.2",
+  "publisher": "decobeto",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/deco_beto/antigravity-quota-status.git"
+    "url": "https://github.com/decobeto/Antigravity_Model_Quota_Indicator.git"
   },
   "bugs": {
-    "url": "https://github.com/deco_beto/antigravity-quota-status/issues"
+    "url": "https://github.com/decobeto/Antigravity_Model_Quota_Indicator/issues"
   },
+  "homepage": "https://github.com/decobeto/Antigravity_Model_Quota_Indicator#readme",
   "keywords": [
     "antigravity",
     "quota",

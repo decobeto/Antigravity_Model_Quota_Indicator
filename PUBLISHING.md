@@ -1,6 +1,6 @@
 # Publishing & Cross-Platform Compatibility Guide 🚀
 
-This document covers cross-platform support (Windows, Linux, macOS) and step-by-step instructions for publishing the **Antigravity Model Quota Indicator** extension under publisher `deco_beto` to extension marketplaces (Open VSX and VS Code Marketplace).
+This document covers cross-platform support (Windows, Linux, macOS) and step-by-step instructions for publishing the **Antigravity Model Quota Indicator** extension under publisher `decobeto` to extension marketplaces (Open VSX and VS Code Marketplace).
 
 ---
 
@@ -36,7 +36,7 @@ Pre-built VSIX package ready for deployment:
 ### Option A: Publish to Open VSX Registry (Default Antigravity IDE Marketplace)
 
 1. Register an account on [open-vsx.org](https://open-vsx.org/).
-2. Create your publisher namespace (`deco_beto`).
+2. Create your publisher namespace (`decobeto`).
 3. Generate an Access Token under *Settings -> Access Tokens*.
 4. Publish using `ovsx`:
    ```bash
