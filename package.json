@@ -1,0 +1,77 @@
+{
+  "name": "antigravity-quota-status",
+  "displayName": "Antigravity Model Quota Indicator",
+  "description": "Displays model quota usage, remaining percentage, and reset countdowns in the Antigravity IDE status bar for Windows, Linux, and macOS.",
+  "version": "1.0.1",
+  "publisher": "deco_beto",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deco_beto/antigravity-quota-status.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deco_beto/antigravity-quota-status/issues"
+  },
+  "keywords": [
+    "antigravity",
+    "quota",
+    "gemini",
+    "claude",
+    "gpt",
+    "status bar",
+    "model quota",
+    "ai"
+  ],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antigravityQuota.refresh",
+        "title": "Antigravity Quota: Refresh Quotas Now",
+        "category": "Antigravity Quota"
+      },
+      {
+        "command": "antigravityQuota.showDetails",
+        "title": "Antigravity Quota: Show Quota Details",
+        "category": "Antigravity Quota"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Model Quota",
+      "properties": {
+        "antigravityQuota.refreshInterval": {
+          "type": "number",
+          "default": 60,
+          "description": "Interval in seconds to automatically refresh model quotas in the status bar (0 to disable)."
+        },
+        "antigravityQuota.showModelName": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show model group names (Gemini / Claude) in the status bar."
+        },
+        "antigravityQuota.showCountdown": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show reset countdown (e.g. 4h 26m) in the status bar."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package",
+    "test": "node scratch/test_service.js"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.32.0"
+  }
+}
