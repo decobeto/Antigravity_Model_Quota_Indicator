@@ -4,6 +4,13 @@ const util = require('util');
 
 const execAsync = util.promisify(exec);
 
+let vscode = null;
+try {
+  vscode = require('vscode');
+} catch (e) {
+  // Running outside VS Code extension host (e.g. test scripts)
+}
+
 class QuotaService {
   constructor() {
     this.cachedPort = null;
@@ -12,69 +19,129 @@ class QuotaService {
   }
 
   /**
-   * Find running language_server process cross-platform (Windows, Linux, macOS)
-   * Extracts CSRF token and PID.
+   * Query candidate language_server processes efficiently on Windows, Linux, and macOS
    */
-  async discoverProcessInfo() {
-    let commandLine = '';
-    let pid = null;
+  async getCandidateProcesses() {
+    const candidates = [];
 
     if (process.platform === 'win32') {
       try {
         const { stdout } = await execAsync(
-          'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE \'%language_server%\'\\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"'
+          'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE \'%language_server%\'\\" | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress"'
         );
-        if (stdout && stdout.trim()) {
+        if (stdout?.trim()) {
           const parsed = JSON.parse(stdout.trim());
-          const item = Array.isArray(parsed) ? parsed[0] : parsed;
-          if (item) {
-            commandLine = item.CommandLine || '';
-            pid = item.ProcessId;
-          }
-        }
-      } catch (err) {
-        // Fallback for wmic if powershell fails
-        try {
-          const { stdout } = await execAsync('wmic process where "name like \'%language_server%\'" get processid,commandline /format:list');
-          commandLine = stdout;
-          const pidMatch = stdout.match(/ProcessId=(\d+)/i);
-          if (pidMatch) pid = parseInt(pidMatch[1], 10);
-        } catch (e) {
-          console.error('[QuotaService] Error running wmic/powershell:', e);
-        }
-      }
-    } else {
-      // Linux / macOS process discovery
-      try {
-        const { stdout } = await execAsync('ps aux');
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          if (line.includes('language_server') && !line.includes('grep')) {
-            commandLine = line;
-            const parts = line.trim().split(/\s+/);
-            if (parts.length > 1 && !isNaN(parts[1])) {
-              pid = parseInt(parts[1], 10);
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          for (const item of list) {
+            if (item?.CommandLine && /--csrf_token\s+[a-f0-9-]+/i.test(item.CommandLine)) {
+              candidates.push({
+                pid: Number(item.ProcessId),
+                ppid: Number(item.ParentProcessId) || null,
+                commandLine: item.CommandLine
+              });
             }
-            break;
           }
         }
       } catch (e) {
-        console.error('[QuotaService] Error running ps:', e);
+        // Fallback to wmic if PowerShell is restricted
+        try {
+          const { stdout } = await execAsync('wmic process where "name like \'%language_server%\'" get processid,parentprocessid,commandline /format:list');
+          const pids = [...stdout.matchAll(/ProcessId=(\d+)/gi)];
+          const ppids = [...stdout.matchAll(/ParentProcessId=(\d+)/gi)];
+          const cmdLines = [...stdout.matchAll(/CommandLine=(.+)/gi)];
+          for (let i = 0; i < pids.length; i++) {
+            const cmd = cmdLines[i]?.[1]?.trim() || '';
+            if (/--csrf_token\s+[a-f0-9-]+/i.test(cmd)) {
+              candidates.push({
+                pid: parseInt(pids[i][1], 10),
+                ppid: ppids[i] ? parseInt(ppids[i][1], 10) : null,
+                commandLine: cmd
+              });
+            }
+          }
+        } catch (errWmic) {
+          console.error('[QuotaService] Error in wmic fallback:', errWmic);
+        }
+      }
+    } else {
+      // Linux / macOS: query only processes containing language_server
+      try {
+        const { stdout } = await execAsync('ps -eo pid,ppid,command | grep language_server | grep -v grep');
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+          if (match && /--csrf_token\s+[a-f0-9-]+/i.test(match[3])) {
+            candidates.push({
+              pid: Number(match[1]),
+              ppid: Number(match[2]),
+              commandLine: match[3]
+            });
+          }
+        }
+      } catch (e) {
+        // Fallback for ps aux if ps -eo has format differences
+        try {
+          const { stdout } = await execAsync('ps aux | grep language_server | grep -v grep');
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            const cmd = parts.slice(10).join(' ');
+            if (parts.length > 1 && /--csrf_token\s+[a-f0-9-]+/i.test(cmd)) {
+              candidates.push({
+                pid: parseInt(parts[1], 10),
+                ppid: null,
+                commandLine: cmd
+              });
+            }
+          }
+        } catch (errPs) {
+          console.error('[QuotaService] Error in ps fallback:', errPs);
+        }
       }
     }
 
-    if (!commandLine) {
+    return candidates;
+  }
+
+  /**
+   * Find language_server process with intelligent disambiguation for multi-window environments
+   */
+  async discoverProcessInfo() {
+    const candidates = await this.getCandidateProcesses();
+
+    if (candidates.length === 0) {
       throw new Error('Antigravity Language Server process not found.');
     }
 
-    const tokenMatch = commandLine.match(/--csrf_token\s+([a-f0-9-]+)/i);
+    // Default to first candidate
+    let chosen = candidates[0];
+
+    // If multiple candidates exist, attempt to match the current workspace
+    if (candidates.length > 1 && vscode?.workspace?.workspaceFolders?.length) {
+      const currentWorkspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath.toLowerCase();
+
+      const workspaceMatch = candidates.find(c => {
+        const match = c.commandLine.match(/--workspace_id\s+([^\s]+)/i);
+        if (!match) return false;
+        // The workspace_id parameter typically encodes the path, e.g. file_c_3A_Users_...
+        const rawId = match[1].toLowerCase();
+        const cleanPath = decodeURIComponent(rawId.replace(/^file_/, '').replace(/_/g, '/'));
+        return currentWorkspacePath.includes(cleanPath) || cleanPath.includes(currentWorkspacePath) || rawId.includes(encodeURIComponent(currentWorkspacePath).toLowerCase());
+      });
+
+      if (workspaceMatch) {
+        chosen = workspaceMatch;
+      }
+    }
+
+    const tokenMatch = chosen.commandLine.match(/--csrf_token\s+([a-f0-9-]+)/i);
     if (!tokenMatch) {
       throw new Error('CSRF token not found in Language Server process arguments.');
     }
 
     return {
       csrfToken: tokenMatch[1],
-      pid: pid
+      pid: chosen.pid
     };
   }
 
@@ -103,7 +170,6 @@ class QuotaService {
       }
     } else if ((process.platform === 'linux' || process.platform === 'darwin') && pid) {
       try {
-        // lsof -a -iTCP -sTCP:LISTEN -p <pid> -n -P
         const { stdout } = await execAsync(`lsof -a -iTCP -sTCP:LISTEN -p ${pid} -n -P`);
         const matches = stdout.matchAll(/:(\d+)\s+\(LISTEN\)/g);
         for (const m of matches) {
@@ -111,7 +177,6 @@ class QuotaService {
           if (p && !ports.includes(p)) ports.push(p);
         }
       } catch (e) {
-        // Fallback with netstat / ss
         try {
           const { stdout } = await execAsync('netstat -anv | grep LISTEN');
           const matches = stdout.matchAll(/\.([0-9]+)\s+.*LISTEN/g);
@@ -123,7 +188,7 @@ class QuotaService {
       }
     }
 
-    // Default candidates if specific process port search returned empty
+    // Default candidate ports if specific process port search returned empty
     const defaultCandidates = [53530, 53527, 53529, 53533, 53534, 53538, 53541, 53552];
     for (const p of defaultCandidates) {
       if (!ports.includes(p)) ports.push(p);

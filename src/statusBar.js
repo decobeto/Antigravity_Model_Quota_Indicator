@@ -60,19 +60,40 @@ class QuotaStatusBar {
     const parts = [];
 
     for (const group of quotaData.groups) {
-      // Find 5-hour bucket (or weekly if 5-hour not present)
       const h5Bucket = group.buckets?.find(b => b.window === '5h') || group.buckets?.[0];
+      const weeklyBucket = group.buckets?.find(b =>
+        b.window === 'weekly' ||
+        b.window === '7d' ||
+        (b.displayName && b.displayName.toLowerCase().includes('weekly'))
+      );
 
-      if (!h5Bucket) continue;
+      const h5Pct = h5Bucket ? Math.round((h5Bucket.remainingFraction ?? 1) * 100) : 100;
+      const weeklyPct = weeklyBucket ? Math.round((weeklyBucket.remainingFraction ?? 1) * 100) : 100;
 
-      const pct = Math.round((h5Bucket.remainingFraction ?? 1) * 100);
-      const timeStr = this.formatTimeRemaining(h5Bucket.resetTime);
+      // The effective quota is determined by whichever bucket is more restrictive
+      let pct = h5Pct;
+      let activeBucket = h5Bucket;
+
+      if (weeklyBucket && weeklyPct < h5Pct) {
+        pct = weeklyPct;
+        activeBucket = weeklyBucket;
+      }
+
+      if (!activeBucket) continue;
+
+      const timeStr = this.formatTimeRemaining(activeBucket.resetTime);
+
+      // Contextual status icon per model group
+      const groupMinPct = Math.min(h5Pct, weeklyPct);
+      let icon = '$(shield)';
+      if (groupMinPct <= 20) icon = '$(warning)';
+      else if (groupMinPct <= 50) icon = '$(pulse)';
 
       let groupLabel = group.displayName;
       if (groupLabel.includes('Gemini')) groupLabel = 'Gemini';
       else if (groupLabel.includes('Claude')) groupLabel = 'Claude/GPT';
 
-      let partText = '';
+      let partText = `${icon} `;
       if (showModelName) {
         partText += `${groupLabel}: `;
       }
@@ -85,21 +106,8 @@ class QuotaStatusBar {
       parts.push(partText);
     }
 
-    // Determine status bar icon based on lowest quota percentage
-    let minPct = 100;
-    for (const group of quotaData.groups) {
-      for (const bucket of group.buckets || []) {
-        const pct = Math.round((bucket.remainingFraction ?? 1) * 100);
-        if (pct < minPct) minPct = pct;
-      }
-    }
-
-    let icon = '$(shield)';
-    if (minPct <= 20) icon = '$(warning)';
-    else if (minPct <= 50) icon = '$(pulse)';
-
     // Set Status Bar Text
-    this.statusBarItem.text = `${icon} ${parts.join(' | ')}`;
+    this.statusBarItem.text = parts.join(' | ');
 
     // Build Markdown Tooltip
     const md = new vscode.MarkdownString();
