@@ -1,0 +1,33 @@
+name: Publish to Open VSX
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish to Open VSX
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Package Extension
+        run: |
+          npm install
+          npx vsce package --no-dependencies
+
+      - name: Publish to Open VSX via Trusted Publishing (OIDC)
+        run: |
+          npx ovsx publish *.vsix
